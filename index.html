@@ -32,7 +32,13 @@ It never transmits your signature anywhere — you copy it manually.</p>
 <div id="err" class="warn"></div>
 
 <script type="module">
-const NONCE = "bounty:22a0f4c51cff5c26d12de57651d5c6c9:1787436878";
+let NONCE = null; // fetched fresh from BountyBook API at signing time
+async function fetchNonce() {
+  const r = await fetch("https://api.bountybook.ai/auth/nonce?address=" + document.getElementById("addr").textContent);
+  const j = await r.json();
+  NONCE = j.nonce;
+  document.getElementById("nonce").textContent = NONCE;
+}
 const EXPECTED_SUFFIX = "1d10";
 document.getElementById("nonce").textContent = NONCE;
 
@@ -76,6 +82,7 @@ window.signMessage = async function () {
       document.getElementById("err").textContent = "Aborted: wrong account selected.";
       return;
     }
+    await fetchNonce();
     // Officially documented SDK param format: hex-encoded message first, address second.
     const signature = await p.request({
       method: "personal_sign",
