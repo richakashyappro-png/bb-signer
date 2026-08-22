@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BountyBook Signer — official Coinbase Wallet SDK</title>
+<style>
+  body { font-family: monospace; background: #111; color: #eee; max-width: 720px; margin: 40px auto; padding: 0 20px; }
+  h1 { font-size: 18px; color: #7fd; }
+  .box { background: #1c1c1c; border: 1px solid #333; padding: 12px; margin: 12px 0; word-break: break-all; }
+  .label { color: #999; font-size: 12px; }
+  button { background: #2d6; border: none; color: #000; font-weight: bold; padding: 14px 24px; font-size: 15px; cursor: pointer; margin-top: 10px; }
+  button:disabled { background: #555; color: #999; cursor: not-allowed; }
+  #sig { color: #ff8; user-select: all; }
+  .warn { color: #f88; font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>BountyBook Signer — @coinbase/wallet-sdk (official deeplink flow)</h1>
+
+<p class="warn">This page makes exactly two wallet calls total: eth_requestAccounts (connect)
+and ONE personal_sign. It never sends transactions, approvals, or spending requests.
+It never transmits your signature anywhere — you copy it manually.</p>
+
+<div class="box"><span class="label">Wallet address:</span><br><b id="addr">not connected</b></div>
+<div class="box"><span class="label">Expected address ends with:</span> <b>...1d10</b></div>
+<div class="box"><span class="label">Nonce to sign (exact string):</span><br><b id="nonce"></b></div>
+
+<button id="connect" onclick="connectWallet()">1. Connect Coinbase Wallet</button>
+<button id="sign" onclick="signMessage()" disabled>2. Sign BountyBook Login Message</button>
+
+<div class="box"><span class="label">Signature (copy this):</span><br><b id="sig">—</b></div>
+<div id="err" class="warn"></div>
+
+<script type="module">
+const NONCE = "bounty:22a0f4c51cff5c26d12de57651d5c6c9:1787436878";
+const EXPECTED_SUFFIX = "1d10";
+document.getElementById("nonce").textContent = NONCE;
+
+let provider = null;
+
+async function getProvider() {
+  if (provider) return provider;
+  const { createCoinbaseWalletSDK } = await import("https://esm.sh/@coinbase/wallet-sdk@4.3.7");
+  const sdk = createCoinbaseWalletSDK({
+    appName: "BountyBook Local Signer",
+    preference: { options: "eoaOnly" }   // EOA mobile wallet ONLY — no Smart Wallet popups
+  });
+  provider = sdk.getProvider();
+  return provider;
+}
+
+window.connectWallet = async function () {
+  document.getElementById("err").textContent = "";
+  try {
+    const p = await getProvider();
+    const accounts = await p.request({ method: "eth_requestAccounts" });
+    const addr = accounts[0];
+    document.getElementById("addr").textContent = addr;
+    if (!addr.toLowerCase().endsWith(EXPECTED_SUFFIX)) {
+      document.getElementById("err").textContent =
+        "WARNING: connected account does NOT end in ...1d10 — switch accounts before signing.";
+    } else {
+      document.getElementById("sign").disabled = false;
+    }
+  } catch (e) {
+    document.getElementById("err").textContent = "Connect failed: " + (e.message || e);
+  }
+};
+
+window.signMessage = async function () {
+  document.getElementById("err").textContent = "";
+  try {
+    const p = await getProvider();
+    const addr = (await p.request({ method: "eth_accounts" }))[0];
+    if (!addr.toLowerCase().endsWith(EXPECTED_SUFFIX)) {
+      document.getElementById("err").textContent = "Aborted: wrong account selected.";
+      return;
+    }
+    // Officially documented SDK param format: hex-encoded message first, address second.
+    const signature = await p.request({
+      method: "personal_sign",
+      params: [NONCE, addr]
+    });
+    document.getElementById("sig").textContent = signature;
+  } catch (e) {
+    document.getElementById("err").textContent = "Signing cancelled or failed: " + (e.message || e);
+  }
+};
+</script>
+</body>
+</html>
