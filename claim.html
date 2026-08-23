@@ -105,7 +105,7 @@ window.claimJob = async function () {
     if (j.status !== "open" || j.executor_address) {
       throw new Error("Job no longer available: status=" + j.status + " executor=" + j.executor_address);
     }
-    const res = await apiCall("/api/claim?id=" + JOB, { executorAddress: WALLET });
+    const res = await apiCall("/api/claim?id=" + JOB, { executorAddress: WALLET.toLowerCase() });
     if (!res.ok) throw new Error("Claim failed: HTTP " + res.status);
     document.getElementById("btnSubmit").disabled = false;
   } catch (e) {
