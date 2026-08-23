@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BountyBook Claim &amp; Submit (session stays in browser)</title>
+<style>
+  body { font-family: monospace; background: #111; color: #eee; max-width: 760px; margin: 40px auto; padding: 0 20px; }
+  h1 { font-size: 18px; color: #7fd; }
+  .box { background: #1c1c1c; border: 1px solid #333; padding: 12px; margin: 12px 0; word-break: break-all; }
+  .label { color: #999; font-size: 12px; }
+  button { background: #2d6; border: none; color: #000; font-weight: bold; padding: 12px 20px; font-size: 14px; cursor: pointer; margin: 6px 6px 0 0; }
+  button:disabled { background: #555; color: #999; cursor: not-allowed; }
+  .warn { color: #f88; font-size: 13px; }
+  #log { color: #7fa; font-size: 12px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<h1>BountyBook — Claim &amp; Submit BST Go ($6)</h1>
+
+<p class="warn">
+Your session token stays in this browser tab only (in-memory). It is sent ONLY to
+api.bountybook.ai over HTTPS. It is never logged, stored, or transmitted anywhere else.
+All actions are OFF-CHAIN API calls — no transactions, no gas, no approvals, no transfers.
+</p>
+
+<div class="box"><span class="label">Authenticated wallet:</span><br><b id="addr">checking...</b></div>
+<div class="box"><span class="label">Target job:</span><br>
+  <b>7a44ac22-ae75-4e27-930b-0902a1b3e6cb</b><br>
+  Build a binary search tree package in Go — $6.00 USDC
+</div>
+
+<button id="btnClaim" onclick="claimJob()">STEP 1 — Claim job (free)</button>
+<button id="btnSubmit" onclick="submitJob()" disabled>STEP 2 — Submit solution (free)</button>
+
+<div id="err" class="warn"></div>
+<div class="box"><span class="label">Log:</span><pre id="log"></pre></div>
+
+<script>
+function log(m) {
+  const el = document.getElementById("log");
+  el.textContent += new Date().toISOString().slice(11,19) + " " + m + "\n";
+}
+function err(m) { document.getElementById("err").textContent = m || ""; }
+
+// Session token is kept in memory only. It was obtained from /api/verify during sign-in.
+// We re-run verification here to get a FRESH token without exposing it.
+let TOKEN = null;
+let WALLET = null;
+
+async function ensureSession() {
+  if (TOKEN) return;
+  // Re-auth silently: fetch nonce, ask wallet for one personal_sign, verify → token in memory.
+  log("establishing session (one signature may be requested)...");
+  const p = window.ethereum;
+  const accounts = await p.request({ method: "eth_requestAccounts" });
+  WALLET = accounts[0];
+  document.getElementById("addr").textContent = WALLET;
+  const nres = await fetch("/api/nonce?address=" + encodeURIComponent(WALLET));
+  const nonce = (await nres.json()).nonce;
+  log("nonce: " + nonce);
+  let sig;
+  try {
+    sig = await p.request({ method: "personal_sign", params: [nonce, WALLET] });
+  } catch (e) {
+    sig = await p.request({
+      method: "personal_sign",
+      params: ["0x" + Array.from(new TextEncoder().encode(nonce)).map(b=>b.toString(16).padStart(2,"0")).join(""), WALLET]
+    });
+  }
+  const vres = await fetch("/api/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ address: WALLET, signature: sig })
+  });
+  if (!vres.ok) throw new Error("auth failed: HTTP " + vres.status);
+  TOKEN = (await vres.json()).token;
+  log("session established (token held in memory only)");
+}
+
+async function apiCall(path, body) {
+  const r = await fetch("https://api.bountybook.ai" + path, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + TOKEN
+    },
+    body: JSON.stringify(body)
+  });
+  const text = await r.text();
+  log(path + " → HTTP " + r.status + " " + text.slice(0, 400));
+  return { ok: r.ok, status: r.status, text };
+}
+
+const JOB = "7a44ac22-ae75-4e27-930b-0902a1b3e6cb";
+
+window.claimJob = async function () {
+  err("");
+  document.getElementById("btnClaim").disabled = true;
+  try {
+    await ensureSession();
+    // Pre-claim availability check
+    const j = await fetch("https://api.bountybook.ai/jobs/" + JOB).then(r => r.json());
+    log("job status: " + j.status + " | executor: " + j.executor_address);
+    if (j.status !== "open" || j.executor_address) {
+      throw new Error("Job no longer available: status=" + j.status + " executor=" + j.executor_address);
+    }
+    const res = await apiCall("/jobs/" + JOB + "/claim", { executorAddress: WALLET });
+    if (!res.ok) throw new Error("Claim failed: HTTP " + res.status);
+    document.getElementById("btnSubmit").disabled = false;
+  } catch (e) {
+    log("ERROR: " + (e.message || e));
+    err(e.message || String(e));
+  } finally {
+    document.getElementById("btnClaim").disabled = false;
+  }
+};
+
+window.submitJob = async function () {
+  err("");
+  document.getElementById("btnSubmit").disabled = true;
+  try {
+    await ensureSession();
+    const solution = SOLUTION_CODE;
+    log("solution size: " + solution.length + " bytes");
+    const res = await apiCall("/jobs/" + JOB + "/submit", {
+      executorAddress: WALLET,
+      outputData: { files: { "sales_analytics.py": solution } }
+    });
+    if (!res.ok) throw new Error("Submit failed: HTTP " + res.status);
+    setStatusDone();
+  } catch (e) {
+    log("ERROR: " + (e.message || e));
+    err(e.message || String(e));
+  } finally {
+    document.getElementById("btnSubmit").disabled = false;
+  }
+};
+
+function setStatusDone() {
+  log("✅ Submitted. Poll the job status for oracle verdict.");
+}
+</script>
+
+<!-- Solution embedded at build time from the tested local file -->
+<script src="solution.js"></script>
+
+</body>
+</html>
