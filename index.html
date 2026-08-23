@@ -135,25 +135,40 @@ async function getProvider() {
     return provider;
   }
 
-  const module =
-    await import("https://esm.sh/@coinbase/wallet-sdk@4.3.7");
+  // Desktop: prefer an already-installed Coinbase Wallet provider.
+  if (
+    window.ethereum &&
+    window.ethereum.isCoinbaseWallet
+  ) {
+    provider = window.ethereum;
+    return provider;
+  }
 
-  const CoinbaseWalletSDK =
-    module.default || module.CoinbaseWalletSDK;
+  // Mobile/fallback: use the Coinbase Wallet SDK (current v4 factory API).
+  // createCoinbaseWalletSDK + getProvider() is the officially documented path;
+  // 'eoaOnly' connects directly to the EOA wallet in Base App / Coinbase Wallet
+  // mobile without Smart Wallet popups.
+  const module = await import(
+    "https://esm.sh/@coinbase/wallet-sdk@4.3.7"
+  );
 
-  if (!CoinbaseWalletSDK) {
+  const createCoinbaseWalletSDK =
+    module.createCoinbaseWalletSDK || module.default?.createCoinbaseWalletSDK;
+
+  if (!createCoinbaseWalletSDK) {
     throw new Error("Coinbase Wallet SDK failed to load.");
   }
 
-  const sdk = new CoinbaseWalletSDK({
-    appName: "BountyBook Signer"
+  const sdk = createCoinbaseWalletSDK({
+    appName: "BountyBook Signer",
+    appChainIds: [8453],
+    preference: { options: "eoaOnly" }
   });
 
-  provider = sdk.makeWeb3Provider();
+  provider = sdk.getProvider();
 
   return provider;
 }
-
 async function connectWallet() {
   setError("");
   document.getElementById("connect").disabled = true;
@@ -273,12 +288,35 @@ async function signMessage() {
     if (!signature) {
       throw new Error("Wallet returned no signature.");
     }
-
     document.getElementById("sig").textContent = signature;
 
-    setStatus(
-      "Signature received. Copy the 0x... value manually."
+    setStatus("Signature received. Verifying with BountyBook...");
+
+    const verifyResponse = await fetch(
+      "https://bb-signer-gh.vercel.app/api/verify",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          address,
+          signature
+        })
+      }
     );
+
+    const verifyData = await verifyResponse.json();
+
+    if (!verifyResponse.ok) {
+      throw new Error(
+        verifyData?.error ||
+        verifyData?.message ||
+        ("BountyBook verification failed: HTTP " + verifyResponse.status)
+      );
+    }
+
+    setStatus("BountyBook authentication successful.");
 
   } catch (error) {
 
