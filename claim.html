@@ -16,7 +16,7 @@
 </head>
 <body>
 
-<h1>BountyBook — Claim &amp; Submit BST Go ($6)</h1>
+<h1>BountyBook — Claim &amp; Submit Cloud Storage Pricing ($5)</h1>
 
 <p class="warn">
 Your session token stays in this browser tab only (in-memory). It is sent ONLY to
@@ -26,8 +26,8 @@ All actions are OFF-CHAIN API calls — no transactions, no gas, no approvals, n
 
 <div class="box"><span class="label">Authenticated wallet:</span><br><b id="addr">checking...</b></div>
 <div class="box"><span class="label">Target job:</span><br>
-  <b>7a44ac22-ae75-4e27-930b-0902a1b3e6cb</b><br>
-  Build a binary search tree package in Go — $6.00 USDC
+  <b>47463355-ccef-4dbb-8c0e-45129382c60c</b><br>
+  Deliver JSON comparison of pricing for 5 cloud object storage services — $5.00 USDC
 </div>
 
 <button id="btnClaim" onclick="claimJob()">STEP 1 — Claim job (free)</button>
@@ -92,7 +92,7 @@ async function apiCall(path, body) {
   return { ok: r.ok, status: r.status, text };
 }
 
-const JOB = "7a44ac22-ae75-4e27-930b-0902a1b3e6cb";
+const JOB = "47463355-ccef-4dbb-8c0e-45129382c60c";
 
 window.claimJob = async function () {
   err("");
@@ -105,7 +105,7 @@ window.claimJob = async function () {
     if (j.status !== "open" || j.executor_address) {
       throw new Error("Job no longer available: status=" + j.status + " executor=" + j.executor_address);
     }
-    const res = await apiCall("/api/claim?id=" + JOB, { executorAddress: WALLET.toLowerCase() });
+    const res = await apiCall("/api/claim?id=" + JOB, { executorAddress: WALLET.toLowerCase(), txHash: "0x" });
     if (!res.ok) throw new Error("Claim failed: HTTP " + res.status);
     document.getElementById("btnSubmit").disabled = false;
   } catch (e) {
@@ -125,7 +125,7 @@ window.submitJob = async function () {
     log("solution size: " + solution.length + " bytes");
     const res = await apiCall("/api/submit?id=" + JOB, {
       executorAddress: WALLET,
-      outputData: { files: { "sales_analytics.py": solution } }
+      outputData: { files: { "storage_pricing.json": solution } }
     });
     if (!res.ok) throw new Error("Submit failed: HTTP " + res.status);
     setStatusDone();
