@@ -100,7 +100,7 @@ window.claimJob = async function () {
   try {
     await ensureSession();
     // Pre-claim availability check
-    const j = await fetch("https://api.bountybook.ai/jobs/" + JOB).then(r => r.json());
+    const j = await fetch("/api/job?id=" + JOB).then(r => r.json());
     log("job status: " + j.status + " | executor: " + j.executor_address);
     if (j.status !== "open" || j.executor_address) {
       throw new Error("Job no longer available: status=" + j.status + " executor=" + j.executor_address);
