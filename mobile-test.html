@@ -24,7 +24,7 @@ document.getElementById("connect").onclick = async () => {
     log("Loading Coinbase Wallet SDK...");
 
     const { createCoinbaseWalletSDK } =
-      await import("https://esm.sh/@coinbase/wallet-sdk@4.3.7");
+      await import("https://esm.sh/@coinbase/wallet-sdk@4.0.0-canary.20250708193645");
 
     const sdk = createCoinbaseWalletSDK({
       appName: "BountyBook Mobile Test",
@@ -53,3 +53,4 @@ document.getElementById("connect").onclick = async () => {
 
 </body>
 </html>
+
