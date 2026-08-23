@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>CBW Connect Repro</title></head>
+<body style="font-family:monospace;background:#111;color:#eee;max-width:640px;margin:40px auto">
+<h3>Coinbase Connect-Only Repro</h3>
+<button onclick="doConnect()">Connect</button>
+<pre id="log" style="white-space:pre-wrap;color:#7f7"></pre>
+<script type="module">
+const log = (m) => { const el = document.getElementById('log'); el.textContent += m + "\n"; console.log(m); };
+window.addEventListener('error', e => log('WINDOW ERROR: ' + e.message));
+window.doConnect = async () => {
+  try {
+    log('location.href = ' + location.href);
+    const { createCoinbaseWalletSDK } = await import('https://esm.sh/@coinbase/wallet-sdk@4.3.7');
+    log('SDK imported');
+    const sdk = createCoinbaseWalletSDK({ appName: 'ConnectRepro', preference: { options: 'eoaOnly' } });
+    const p = sdk.getProvider();
+    p.on('connect', i => log('EVENT connect: ' + JSON.stringify(i)));
+    p.on('error', e => log('EVENT error: ' + JSON.stringify(e)));
+    log('requesting eth_requestAccounts...');
+    const accts = await p.request({ method: 'eth_requestAccounts' });
+    log('ACCOUNTS: ' + JSON.stringify(accts));
+  } catch (e) {
+    log('CONNECT FAILED: ' + (e && (e.code + ' ' + e.message) || e));
+  }
+};
+</script></body></html>
