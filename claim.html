@@ -79,7 +79,7 @@ async function ensureSession() {
 }
 
 async function apiCall(path, body) {
-  const r = await fetch("https://api.bountybook.ai" + path, {
+  const r = await fetch(path, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -105,7 +105,7 @@ window.claimJob = async function () {
     if (j.status !== "open" || j.executor_address) {
       throw new Error("Job no longer available: status=" + j.status + " executor=" + j.executor_address);
     }
-    const res = await apiCall("/jobs/" + JOB + "/claim", { executorAddress: WALLET });
+    const res = await apiCall("/api/claim?id=" + JOB, { executorAddress: WALLET });
     if (!res.ok) throw new Error("Claim failed: HTTP " + res.status);
     document.getElementById("btnSubmit").disabled = false;
   } catch (e) {
@@ -123,7 +123,7 @@ window.submitJob = async function () {
     await ensureSession();
     const solution = SOLUTION_CODE;
     log("solution size: " + solution.length + " bytes");
-    const res = await apiCall("/jobs/" + JOB + "/submit", {
+    const res = await apiCall("/api/submit?id=" + JOB, {
       executorAddress: WALLET,
       outputData: { files: { "sales_analytics.py": solution } }
     });
