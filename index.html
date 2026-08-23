@@ -10,18 +10,17 @@
   .label { color: #999; font-size: 12px; }
   button { background: #2d6; border: none; color: #000; font-weight: bold; padding: 14px 24px; font-size: 15px; cursor: pointer; margin-top: 10px; }
   button:disabled { background: #555; color: #999; cursor: not-allowed; }
-  #sig { color: #8f8; user-select: all; }
   .warn { color: #f88; font-size: 13px; }
-  #log { color: #7fa; font-size: 12px; max-height: 220px; overflow-y: auto; }
+  #log { color: #7fa; font-size: 12px; max-height: 240px; overflow-y: auto; white-space: pre-wrap; }
 </style>
 </head>
 
 <body>
 
-<h1>BountyBook Signer — Base Account (Smart Wallet)</h1>
+<h1>BountyBook Signer — Base Account (Smart Wallet SIWE)</h1>
 
 <p class="warn">
-This page only requests wallet connection + off-chain authentication signatures.
+Official Base Account sign-in only (wallet_connect + SignInWithEthereum).
 No transactions, approvals, transfers, or spending requests — ever.
 </p>
 
@@ -31,7 +30,7 @@ No transactions, approvals, transfers, or spending requests — ever.
 
 <button id="signin" onclick="baseSignIn()">1. Sign in with Base</button>
 
-<div class="box"><span class="label">BountyBook nonce:</span><br><b id="nonce">—</b></div>
+<div class="box"><span class="label">SIWE message:</span><br><b id="siwemsg">—</b></div>
 <div class="box"><span class="label">Signature:</span><br><b id="sig">—</b></div>
 
 <div id="err" class="warn"></div>
@@ -51,61 +50,34 @@ function log(m) {
 }
 function setError(m) { document.getElementById("err").textContent = m || ""; }
 function setStatus(m) { document.getElementById("status").textContent = m; }
-function setAddr(a) { document.getElementById("addr").textContent = a; }
 
 const provider = window.createBaseAccountSDK({ appName: "BountyBook Signer" }).getProvider();
 provider.on("connect", i => log("event connect: " + JSON.stringify(i)));
-provider.on("accountsChanged", a => log("event accountsChanged: " + JSON.stringify(a)));
 
-// Prefetch a fresh BountyBook nonce on page load (per Base docs: do it BEFORE the
-// popup opens so the wallet_connect call happens inside the user-gesture context).
-let bbNonce = null;
-let bbAddress = null; // filled after connect; nonce re-fetched then if needed
-
-async function prefetchNonce(address) {
-  const r = await fetch("/api/nonce?address=" + encodeURIComponent(address));
-  if (!r.ok) throw new Error("Nonce fetch failed: HTTP " + r.status);
-  bbNonce = (await r.json()).nonce;
-  document.getElementById("nonce").textContent = bbNonce;
-  log("BountyBook nonce fetched: " + bbNonce);
-}
-
-function withTimeout(promise, ms, label) {
+function withTimeout(p, ms, label) {
   return Promise.race([
-    promise,
+    p,
     new Promise((_, rej) => setTimeout(() => rej(new Error(label + " timed out after " + ms / 1000 + "s")), ms))
   ]);
 }
 
-function utf8ToHex(str) {
-  return "0x" + Array.from(new TextEncoder().encode(str))
-    .map(b => b.toString(16).padStart(2, "0")).join("");
+async function fetchNonce(address) {
+  const r = await fetch("/api/nonce?address=" + encodeURIComponent(address));
+  if (!r.ok) throw new Error("Nonce fetch failed: HTTP " + r.status);
+  const j = await r.json();
+  log("BountyBook nonce: " + j.nonce);
+  return j.nonce;
 }
 
-async function connectViaWalletConnect() {
-  // Docs pattern: switch to Base first, then wallet_connect with SIWE capability.
-  log("switching to Base mainnet...");
-  await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: BASE_MAINNET }] });
-  log("switched. requesting wallet_connect (SIWE)...");
-  const handshakeNonce = window.crypto.randomUUID().replace(/-/g, "");
-  const { accounts } = await withTimeout(provider.request({
-    method: "wallet_connect",
-    params: [{
-      version: "1",
-      capabilities: { signInWithEthereum: { nonce: handshakeNonce, chainId: BASE_MAINNET } }
-    }]
-  }), 120000, "wallet_connect");
-  log("wallet_connect resolved: " + JSON.stringify(accounts).slice(0, 200));
-  return accounts[0];
-}
-
-async function connectViaFallback() {
-  // Docs-recommended fallback: eth_requestAccounts + personal_sign.
-  log("falling back to eth_requestAccounts...");
-  const accounts = await withTimeout(provider.request({ method: "eth_requestAccounts" }), 120000, "eth_requestAccounts");
-  log("eth_requestAccounts resolved: " + JSON.stringify(accounts));
-  return { address: accounts[0], capabilities: {} };
-}
+// Prefetch nonce on page load using the known expected address so the
+// wallet_connect call happens inside the click gesture (Base docs recommendation).
+// Re-fetched after connect with the real address if it differs.
+let bbNonce = null;
+window.addEventListener("load", () => {
+  fetchNonce("0x1ba8ad2bd4e02aca49bb00262c2649597fdc1d10")
+    .then(n => { bbNonce = n; })
+    .catch(e => log("nonce prefetch failed (will retry after connect): " + e.message));
+});
 
 async function baseSignIn() {
   setError("");
@@ -113,51 +85,74 @@ async function baseSignIn() {
   document.getElementById("signin").disabled = true;
 
   try {
-    let account;
+    // 1. Ensure Base mainnet
     try {
-      account = await connectViaWalletConnect();
+      await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: BASE_MAINNET }] });
+      log("chain switched to Base");
     } catch (e) {
-      log("wallet_connect failed: " + (e?.message || e));
-      setStatus("Primary connect failed — using fallback flow...");
-      account = await connectViaFallback();
+      log("chain switch note: " + (e?.message || e));
     }
 
-    const address = account.address;
-    setAddr(address);
+    // 2. Fresh BountyBook nonce BEFORE the popup (re-fetch to be safe)
+    const address = "0x1ba8ad2bd4e02aca49bb00262c2649597fdc1d10";
+    let nonce = bbNonce || await fetchNonce(address);
 
-    if (!address.toLowerCase().endsWith(EXPECTED_SUFFIX)) {
+    // 3. wallet_connect + SIWE — THE authentication call. No personal_sign anywhere.
+    setStatus("Opening Base sign-in...");
+    const { accounts } = await withTimeout(provider.request({
+      method: "wallet_connect",
+      params: [{
+        version: "1",
+        capabilities: {
+          signInWithEthereum: {
+            nonce,
+            chainId: BASE_MAINNET
+          }
+        }
+      }]
+    }), 180000, "wallet_connect");
+
+    log("wallet_connect resolved");
+    const acct = accounts[0];
+    setAddr(acct.address);
+
+    if (!acct.address.toLowerCase().endsWith(EXPECTED_SUFFIX)) {
       throw new Error("Connected account does NOT end in ...1d10. Do not proceed.");
     }
-    log("address OK: " + address);
 
-    setStatus("Connected. Fetching fresh BountyBook nonce...");
-    await prefetchNonce(address);
+    const siwe = acct.capabilities && acct.capabilities.signInWithEthereum;
+    if (!siwe || !siwe.signature) {
+      throw new Error("signInWithEthereum capability missing from response: " +
+        JSON.stringify(acct.capabilities || {}).slice(0, 200));
+    }
 
-    // If SIWE capability returned a message+signature, BountyBook's verify endpoint
-    // expects a personal_sign of the raw nonce — so we always sign the BB nonce.
-    setStatus("Requesting BountyBook login signature...");
-    const signature = await withTimeout(provider.request({
-      method: "personal_sign",
-      params: [utf8ToHex(bbNonce), address]
-    }), 120000, "personal_sign");
+    document.getElementById("siwemsg").textContent = siwe.message;
+    document.getElementById("sig").textContent = siwe.signature;
+    log("SIWE message: " + siwe.message.slice(0, 120).replace(/\n/g, " | ") + "...");
+    log("signature: " + siwe.signature.slice(0, 20) + "...");
 
-    if (!signature) throw new Error("Wallet returned no signature.");
-    document.getElementById("sig").textContent = signature;
-    log("signature received: " + signature.slice(0, 20) + "...");
-
+    // 4. Verify with BountyBook via existing backend (forwards message too)
     setStatus("Verifying with BountyBook...");
     const vres = await fetch("/api/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address, signature })
+      body: JSON.stringify({
+        address: acct.address,
+        signature: siwe.signature,
+        message: siwe.message
+      })
     });
-    const vdata = await vres.json().catch(() => ({}));
+    const vtext = await vres.text();
+    log("verify HTTP " + vres.status + ": " + vtext.slice(0, 300));
+
+    let vdata = {};
+    try { vdata = JSON.parse(vtext); } catch (_) {}
+
     if (!vres.ok) {
       throw new Error(vdata?.error || vdata?.message ||
-        ("BountyBook verification failed: HTTP " + vres.status + " " + JSON.stringify(vdata).slice(0, 200)));
+        ("BountyBook verification failed: HTTP " + vres.status));
     }
 
-    log("verify response: " + JSON.stringify(vdata).slice(0, 300));
     setStatus("✅ BountyBook authentication successful. Session active.");
 
   } catch (error) {
@@ -171,7 +166,7 @@ async function baseSignIn() {
 }
 
 window.baseSignIn = baseSignIn;
-log("page loaded, SDK ready");
+log("page loaded, Base Account SDK ready");
 </script>
 
 </body>

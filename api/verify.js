@@ -14,13 +14,19 @@
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { address, signature } = req.body || {};
+  const { address, signature, message } = req.body || {};
 
   if (!address || !signature) {
     return res.status(400).json({
       error: "Missing address or signature"
     });
   }
+
+  // BountyBook's contract is {address, signature}. The SIWE `message` is forwarded
+  // when present (harmless if unused upstream).
+  const payload = message
+    ? { address, signature, message }
+    : { address, signature };
 
   try {
     const response = await fetch(
@@ -30,10 +36,7 @@
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          address,
-          signature
-        })
+        body: JSON.stringify(payload)
       }
     );
 
