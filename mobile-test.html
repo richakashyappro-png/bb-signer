@@ -1,0 +1,55 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Base Mobile Connect Test</title>
+</head>
+<body style="font-family:monospace;background:#111;color:#fff;padding:25px">
+
+<h2>Base Mobile Connect Test</h2>
+
+<button id="connect" style="padding:15px;font-size:16px">
+Connect Base Wallet
+</button>
+
+<pre id="log" style="white-space:pre-wrap;margin-top:20px"></pre>
+
+<script type="module">
+const log = (msg) => {
+  document.getElementById("log").textContent += msg + "\\n";
+};
+
+document.getElementById("connect").onclick = async () => {
+  try {
+    log("Loading Coinbase Wallet SDK...");
+
+    const { createCoinbaseWalletSDK } =
+      await import("https://esm.sh/@coinbase/wallet-sdk@4.3.7");
+
+    const sdk = createCoinbaseWalletSDK({
+      appName: "BountyBook Mobile Test",
+      appChainIds: [8453],
+      preference: { options: "eoaOnly" }
+    });
+
+    const provider = sdk.getProvider();
+
+    log("Requesting wallet connection...");
+
+    const accounts = await provider.request({
+      method: "eth_requestAccounts"
+    });
+
+    log("SUCCESS");
+    log("Address: " + accounts[0]);
+
+  } catch (e) {
+    log("FAILED");
+    log("Code: " + (e?.code ?? "none"));
+    log("Message: " + (e?.message ?? String(e)));
+  }
+};
+</script>
+
+</body>
+</html>
