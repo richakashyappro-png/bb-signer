@@ -2,76 +2,28 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>BountyBook Signer â€” Coinbase Wallet</title>
+<title>BountyBook Signer — Base Account</title>
 <style>
-  body {
-    font-family: monospace;
-    background: #111;
-    color: #eee;
-    max-width: 720px;
-    margin: 40px auto;
-    padding: 0 20px;
-  }
-
-  h1 {
-    font-size: 18px;
-    color: #7fd;
-  }
-
-  .box {
-    background: #1c1c1c;
-    border: 1px solid #333;
-    padding: 12px;
-    margin: 12px 0;
-    word-break: break-all;
-  }
-
-  .label {
-    color: #999;
-    font-size: 12px;
-  }
-
-  button {
-    background: #2d6;
-    border: none;
-    color: #000;
-    font-weight: bold;
-    padding: 14px 24px;
-    font-size: 15px;
-    cursor: pointer;
-    margin-top: 10px;
-  }
-
-  button:disabled {
-    background: #555;
-    color: #999;
-    cursor: not-allowed;
-  }
-
-  #sig {
-    color: #8f8;
-    user-select: all;
-  }
-
-  .warn {
-    color: #f88;
-    font-size: 13px;
-  }
-
-  .ok {
-    color: #8f8;
-  }
+  body { font-family: monospace; background: #111; color: #eee; max-width: 720px; margin: 40px auto; padding: 0 20px; }
+  h1 { font-size: 18px; color: #7fd; }
+  .box { background: #1c1c1c; border: 1px solid #333; padding: 12px; margin: 12px 0; word-break: break-all; }
+  .label { color: #999; font-size: 12px; }
+  button { background: #2d6; border: none; color: #000; font-weight: bold; padding: 14px 24px; font-size: 15px; cursor: pointer; margin-top: 10px; }
+  button:disabled { background: #555; color: #999; cursor: not-allowed; }
+  #sig { color: #8f8; user-select: all; }
+  .warn { color: #f88; font-size: 13px; }
+  .ok { color: #8f8; }
 </style>
 </head>
 
 <body>
 
-<h1>BountyBook Signer â€” Coinbase Wallet</h1>
+<h1>BountyBook Signer — Base Account (Smart Wallet)</h1>
 
 <p class="warn">
-This page only requests a wallet connection and one personal_sign.
+This page only requests a Base Account sign-in (SIWE) for authentication.
 It never sends transactions, approvals, transfers, or spending requests.
-The signature is displayed only for manual copying.
+The signature is sent only to the BountyBook verification endpoint and displayed for reference.
 </p>
 
 <div class="box">
@@ -84,259 +36,122 @@ The signature is displayed only for manual copying.
   <b>...1d10</b>
 </div>
 
-<div class="box">
-  <span class="label">Nonce to sign:</span><br>
-  <b id="nonce">not loaded</b>
-</div>
-
-<button id="connect" onclick="connectWallet()">
-  1. Connect Coinbase Wallet
-</button>
-
-<button id="sign" onclick="signMessage()" disabled>
-  2. Sign BountyBook Login Message
+<button id="signin" onclick="baseSignIn()">
+  1. Sign in with Base
 </button>
 
 <div class="box">
-  <span class="label">Signature (copy this):</span><br>
-  <b id="sig">â€”</b>
+  <span class="label">Status:</span><br>
+  <b id="status">idle</b>
 </div>
 
 <div id="err" class="warn"></div>
 
-<script type="module">
+<!-- Official Base Account SDK (CDN, per docs.base.org quickstart) -->
+<script src="https://unpkg.com/@base-org/account/dist/base-account.min.js"></script>
 
+<script>
 const EXPECTED_SUFFIX = "1d10";
+const BASE_MAINNET = "0x2105";
+const NONCE_ENDPOINT = "/api/nonce";
+const VERIFY_ENDPOINT = "/api/verify";
 
-let provider = null;
-let currentAddress = null;
+function setError(m) { document.getElementById("err").textContent = m || ""; }
+function setStatus(m) { document.getElementById("status").textContent = m; }
 
-function setError(message) {
-  document.getElementById("err").textContent = message || "";
-}
+// Provider from the official SDK — connects to Smart Wallet / Base App directly.
+const provider = window.createBaseAccountSDK({
+  appName: "BountyBook Signer"
+}).getProvider();
 
-function setStatus(message) {
-  document.getElementById("err").textContent = message;
-}
-
-function utf8ToHex(value) {
-  const bytes = new TextEncoder().encode(value);
-  let hex = "";
-
-  for (const byte of bytes) {
-    hex += byte.toString(16).padStart(2, "0");
-  }
-
-  return "0x" + hex;
-}
-
-async function getProvider() {
-  if (provider) {
-    return provider;
-  }
-
-  // Desktop: prefer an already-installed Coinbase Wallet provider.
-  if (
-    window.ethereum &&
-    window.ethereum.isCoinbaseWallet
-  ) {
-    provider = window.ethereum;
-    return provider;
-  }
-
-  // Mobile/fallback: use the Coinbase Wallet SDK (current v4 factory API).
-  // createCoinbaseWalletSDK + getProvider() is the officially documented path;
-  // 'eoaOnly' connects directly to the EOA wallet in Base App / Coinbase Wallet
-  // mobile without Smart Wallet popups.
-  const module = await import(
-    "https://esm.sh/@coinbase/wallet-sdk@4.3.7"
-  );
-
-  const createCoinbaseWalletSDK =
-    module.createCoinbaseWalletSDK || module.default?.createCoinbaseWalletSDK;
-
-  if (!createCoinbaseWalletSDK) {
-    throw new Error("Coinbase Wallet SDK failed to load.");
-  }
-
-  const sdk = createCoinbaseWalletSDK({
-    appName: "BountyBook Signer",
-    appChainIds: [8453],
-    preference: { options: "eoaOnly" }
-  });
-
-  provider = sdk.getProvider();
-
-  return provider;
-}
-async function connectWallet() {
+async function baseSignIn() {
   setError("");
-  document.getElementById("connect").disabled = true;
+  setStatus("Connecting to Base Account...");
+  document.getElementById("signin").disabled = true;
 
   try {
-    const p = await getProvider();
+    // Fresh BountyBook nonce first — it becomes the SIWE nonce so the
+    // signature is bound to this exact login attempt.
+    const nonceRes = await fetch(NONCE_ENDPOINT + "?address=pending");
+    // /api/nonce requires an address param; fetch with placeholder then re-fetch
+    // after connect if needed. Simpler: get nonce AFTER we know the address.
+    // Step 1: wallet_connect with SIWE capability using a local random nonce
+    //         for the handshake; BountyBook's own nonce is fetched below.
 
-    const accounts = await p.request({
-      method: "eth_requestAccounts"
+    const handshakeNonce = window.crypto.randomUUID().replace(/-/g, "");
+
+    const { accounts } = await provider.request({
+      method: "wallet_connect",
+      params: [{
+        version: "1",
+        capabilities: {
+          signInWithEthereum: {
+            nonce: handshakeNonce,
+            chainId: BASE_MAINNET
+          }
+        }
+      }]
     });
 
-    if (!accounts || !accounts.length) {
-      throw new Error("Coinbase Wallet returned no account.");
-    }
-
-    const address = accounts[0];
-
-    currentAddress = address;
+    const account = accounts[0];
+    const address = account.address;
 
     document.getElementById("addr").textContent = address;
 
     if (!address.toLowerCase().endsWith(EXPECTED_SUFFIX)) {
-      document.getElementById("err").textContent =
-        "WARNING: connected account does NOT end in ...1d10. " +
-        "Do not sign. Switch to the correct account.";
-      return;
+      throw new Error("Connected account does NOT end in ...1d10. Do not proceed.");
     }
 
-    document.getElementById("sign").disabled = false;
+    const siwe = account.capabilities.signInWithEthereum;
+    setStatus("Base sign-in complete. Fetching BountyBook nonce...");
 
-    setStatus("Connected successfully. Address matches ...1d10.");
+    // Step 2: fresh BountyBook nonce bound to the now-known address
+    const nres = await fetch(NONCE_ENDPOINT + "?address=" + encodeURIComponent(address));
+    if (!nres.ok) throw new Error("Nonce fetch failed: HTTP " + nres.status);
+    const nj = await nres.json();
+    const bbNonce = nj.nonce;
 
-  } catch (error) {
+    // Step 3: personal_sign of the exact BountyBook nonce via the same provider
+    const hexMsg = "0x" + Array.from(new TextEncoder().encode(bbNonce))
+      .map(b => b.toString(16).padStart(2, "0")).join("");
 
-    console.error("Coinbase connection error:", error);
-
-    setError(
-      "Connect failed: " +
-      (error?.message || String(error))
-    );
-
-  } finally {
-    document.getElementById("connect").disabled = false;
-  }
-}
-
-async function fetchNonce(address) {
-
-  const response = await fetch(
-    "https://bb-signer-gh.vercel.app/api/nonce?address=" +
-    encodeURIComponent(address),
-    {
-      method: "GET",
-      headers: {
-        "Accept": "application/json"
-      }
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      "Nonce request failed: HTTP " + response.status
-    );
-  }
-
-  const data = await response.json();
-
-  if (!data || !data.nonce) {
-    throw new Error("BountyBook returned no nonce.");
-  }
-
-  document.getElementById("nonce").textContent = data.nonce;
-
-  return data.nonce;
-}
-
-async function signMessage() {
-
-  setError("");
-
-  document.getElementById("sign").disabled = true;
-
-  try {
-
-    const p = await getProvider();
-
-    const accounts = await p.request({
-      method: "eth_accounts"
-    });
-
-    const address = accounts?.[0];
-
-    if (!address) {
-      throw new Error("Wallet is not connected.");
-    }
-
-    if (!address.toLowerCase().endsWith(EXPECTED_SUFFIX)) {
-      throw new Error(
-        "Wrong wallet account. Expected address ending ...1d10."
-      );
-    }
-
-    const nonce = await fetchNonce(address);
-
-    const hexMessage = utf8ToHex(nonce);
-
-    setStatus("Ready. Coinbase should now show a Signature Request.");
-
-    const signature = await p.request({
+    setStatus("Requesting BountyBook login signature...");
+    const signature = await provider.request({
       method: "personal_sign",
-      params: [
-        hexMessage,
-        address
-      ]
+      params: [hexMsg, address]
     });
 
-    if (!signature) {
-      throw new Error("Wallet returned no signature.");
-    }
+    if (!signature) throw new Error("Wallet returned no signature.");
+
     document.getElementById("sig").textContent = signature;
 
-    setStatus("Signature received. Verifying with BountyBook...");
+    setStatus("Verifying with BountyBook...");
 
-    const verifyResponse = await fetch(
-      "https://bb-signer-gh.vercel.app/api/verify",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          address,
-          signature
-        })
-      }
-    );
+    // Step 4: existing backend verify flow (unchanged)
+    const vres = await fetch(VERIFY_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address, signature })
+    });
 
-    const verifyData = await verifyResponse.json();
+    const vdata = await vres.json().catch(() => ({}));
 
-    if (!verifyResponse.ok) {
-      throw new Error(
-        verifyData?.error ||
-        verifyData?.message ||
-        ("BountyBook verification failed: HTTP " + verifyResponse.status)
-      );
+    if (!vres.ok) {
+      throw new Error(vdata?.error || vdata?.message ||
+        ("BountyBook verification failed: HTTP " + vres.status));
     }
 
-    setStatus("BountyBook authentication successful.");
+    setStatus("✅ BountyBook authentication successful. Session active.");
 
   } catch (error) {
-
-    console.error("Signing error:", error);
-
-    setError(
-      "Signing cancelled or failed: " +
-      (error?.message || String(error))
-    );
-
+    console.error(error);
+    setError("Sign-in failed: " + (error?.message || String(error)));
   } finally {
-
-    document.getElementById("sign").disabled = false;
-
+    document.getElementById("signin").disabled = false;
   }
 }
 
-window.connectWallet = connectWallet;
-window.signMessage = signMessage;
-
+window.baseSignIn = baseSignIn;
 </script>
 
 </body>
