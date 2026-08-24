@@ -16,7 +16,7 @@
 </head>
 <body>
 
-<h1>BountyBook — Claim &amp; Submit Cloud Storage Pricing ($5)</h1>
+<h1>BountyBook — Claim &amp; Submit AVL Tree ($15)</h1>
 
 <p class="warn">
 Your session token stays in this browser tab only (in-memory). It is sent ONLY to
@@ -29,6 +29,8 @@ All actions are OFF-CHAIN API calls — no transactions, no gas, no approvals, n
   <b>1063de95-75f4-4170-8879-f5b1b683bb9b</b><br>
   Build an AVL tree implementation in Python — $15.00 USDC
 </div>
+
+<div class="box" id="solStatus"><span class="label">Solution payload:</span><br><b id="solInfo">checking...</b></div>
 
 <button id="btnClaim" onclick="claimJob()">STEP 1 — Claim job (free)</button>
 <button id="btnSubmit" onclick="submitJob()" disabled>STEP 2 — Submit solution (free)</button>
@@ -116,23 +118,76 @@ window.claimJob = async function () {
   }
 };
 
+const EXPECTED_FILE = "avl.py";
+const MIN_SOLUTION_LENGTH = 1000;
+
+// Independent live fetch of the deployed solution.js — never trusts in-memory state alone
+async function getLiveSolution() {
+  const url = "/solution.js?v=" + Date.now(); // cache-bust
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("Cannot fetch /solution.js: HTTP " + r.status);
+  const text = await r.text();
+  const m = text.match(/const SOLUTION_CODE = (.*);/s);
+  if (!m) throw new Error("/solution.js missing SOLUTION_CODE variable");
+  return JSON.parse(m[1]); // decode the embedded string exactly as the JS engine would
+}
+
+function validateSolution(sol, source) {
+  if (!sol || typeof sol !== "string") throw new Error(source + ": solution is missing/not a string");
+  if (sol.trim().length < MIN_SOLUTION_LENGTH) throw new Error(source + ": solution too small (" + sol.trim().length + " chars, need >=" + MIN_SOLUTION_LENGTH + ")");
+  if (!sol.includes("All tests passed")) throw new Error(source + ": solution missing 'All tests passed' output marker");
+  if (!sol.includes("class Node") || !sol.includes("def insert") || !sol.includes("def inorder")) throw new Error(source + ": solution missing expected AVL structure");
+}
+
+async function verifyAndDisplay() {
+  // Fetch live from server (independent of page memory)
+  const liveSol = await getLiveSolution();
+  validateSolution(liveSol, "live /solution.js");
+
+  // Also check in-memory copy matches
+  if (typeof SOLUTION_CODE !== "undefined") {
+    validateSolution(SOLUTION_CODE, "in-memory SOLUTION_CODE");
+    if (SOLUTION_CODE !== liveSol) throw new Error("In-memory SOLUTION_CODE does not match live /solution.js — REFRESH THE PAGE");
+  }
+
+  document.getElementById("solInfo").textContent =
+    "READY — " + EXPECTED_FILE + " — " + liveSol.length + " bytes";
+  return liveSol;
+}
+
+// On page load, verify immediately and enable/disable submit accordingly
+(async function initGuard() {
+  try {
+    await verifyAndDisplay();
+  } catch (e) {
+    document.getElementById("solInfo").textContent = "STALE/MISSING — " + e.message;
+    document.getElementById("btnSubmit").disabled = true;
+    err(e.message + " → REFRESH THE PAGE (Ctrl+Shift+R)");
+  }
+})();
+
 window.submitJob = async function () {
   err("");
   document.getElementById("btnSubmit").disabled = true;
   try {
+    // HARD GUARD: independently re-verify live payload right before submitting
+    let solution;
+    try {
+      solution = await verifyAndDisplay();
+      log("guard passed: live solution is " + solution.length + " bytes");
+    } catch (guardErr) {
+      throw new Error("GUARD BLOCKED SUBMIT — " + guardErr.message);
+    }
     await ensureSession();
-    const solution = SOLUTION_CODE;
-    log("solution size: " + solution.length + " bytes");
     const res = await apiCall("/api/submit?id=" + JOB, {
       executorAddress: WALLET,
-      outputData: { files: { "avl.py": solution } }
+      outputData: { files: { [EXPECTED_FILE]: solution } }
     });
     if (!res.ok) throw new Error("Submit failed: HTTP " + res.status);
     setStatusDone();
   } catch (e) {
     log("ERROR: " + (e.message || e));
     err(e.message || String(e));
-  } finally {
     document.getElementById("btnSubmit").disabled = false;
   }
 };
