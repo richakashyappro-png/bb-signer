@@ -1,8 +1,5 @@
 import { readFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+import { join } from "path";
 
 // The ONLY job this guard allows submission for
 const ALLOWED_JOB_ID = "1063de95-75f4-4170-8879-f5b1b683bb9b";
@@ -10,10 +7,10 @@ const EXPECTED_FILE = "avl.py";
 const MIN_LENGTH = 1000;
 
 function loadAuthoritativeSolution() {
-  // Read solution.js from the deployed static files at the project root
-  const solPath = join(__dirname, "..", "solution.js");
+  // Vercel serverless functions: static files are at the project root relative to cwd
+  const solPath = join(process.cwd(), "solution.js");
   const raw = readFileSync(solPath, "utf-8");
-  const match = raw.match(/const SOLUTION_CODE = (.*);/s);
+  const match = raw.match(/const SOLUTION_CODE = ([\s\S]*);/);
   if (!match) throw new Error("solution.js missing SOLUTION_CODE variable");
   return JSON.parse(match[1]);
 }
@@ -48,13 +45,12 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Missing or invalid job id" });
   }
 
-  // === SERVER-SIDE SUBMISSION SAFETY GATE ===
   console.log(`[GUARD] JOB ID: ${id}`);
 
   if (id !== ALLOWED_JOB_ID) {
-    console.log(`[GUARD] RESULT: BLOCKED — job ${id} is not the allowed job`);
+    console.log(`[GUARD] RESULT: BLOCKED_WRONG_JOB`);
     return res.status(409).json({
-      error: "Server guard: this deployment only accepts submissions for job " + ALLOWED_JOB_ID,
+      error: "Server guard: only job " + ALLOWED_JOB_ID + " can be submitted from this deployment",
       guardResult: "BLOCKED_WRONG_JOB"
     });
   }
@@ -63,19 +59,18 @@ export default async function handler(req, res) {
   try {
     authoritativeSolution = loadAuthoritativeSolution();
   } catch (e) {
-    console.log(`[GUARD] RESULT: BLOCKED — cannot load solution.js: ${e.message}`);
+    console.log(`[GUARD] RESULT: BLOCKED_LOAD_FAIL — ${e.message}`);
     return res.status(500).json({
-      error: "Server guard: cannot load authoritative solution — " + e.message,
+      error: "Server guard: cannot load solution — " + e.message,
       guardResult: "BLOCKED_LOAD_FAIL"
     });
   }
 
   console.log(`[GUARD] SERVER SOLUTION LENGTH: ${authoritativeSolution.length}`);
-  console.log(`[GUARD] EXPECTED FILE: ${EXPECTED_FILE}`);
 
   const validation = validateSolution(authoritativeSolution);
   if (!validation.ok) {
-    console.log(`[GUARD] RESULT: BLOCKED — ${validation.reason}`);
+    console.log(`[GUARD] RESULT: BLOCKED_INVALID_SOLUTION — ${validation.reason}`);
     return res.status(409).json({
       error: "Server guard: solution failed validation — " + validation.reason,
       guardResult: "BLOCKED_INVALID_SOLUTION",
@@ -83,7 +78,6 @@ export default async function handler(req, res) {
     });
   }
 
-  // Force the body to use OUR verified solution regardless of what the client sent
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith("Bearer ")) {
     return res.status(401).json({ error: "Missing bearer token" });
@@ -91,19 +85,18 @@ export default async function handler(req, res) {
 
   const executorAddress = req.body?.executorAddress;
   if (!executorAddress || typeof executorAddress !== "string") {
-    return res.status(400).json({ error: "Missing executorAddress in request body" });
+    return res.status(400).json({ error: "Missing executorAddress" });
   }
 
+  // Force-replace client payload with server-verified solution
   const forwardBody = {
     executorAddress: executorAddress,
     outputData: {
-      files: {
-        [EXPECTED_FILE]: authoritativeSolution
-      }
+      files: { [EXPECTED_FILE]: authoritativeSolution }
     }
   };
 
-  console.log(`[GUARD] RESULT: PASS — forwarding to BountyBook with server-verified solution (${authoritativeSolution.length} bytes)`);
+  console.log(`[GUARD] RESULT: PASS — forwarding with ${authoritativeSolution.length} byte server solution`);
 
   try {
     const response = await fetch(
@@ -119,13 +112,10 @@ export default async function handler(req, res) {
     );
 
     const body = await response.text();
-
     res.status(response.status);
     res.setHeader("Content-Type", "application/json");
     res.send(body);
   } catch (error) {
-    return res.status(502).json({
-      error: "Submit upstream request failed"
-    });
+    return res.status(502).json({ error: "Submit upstream request failed" });
   }
 }
