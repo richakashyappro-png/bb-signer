@@ -26,8 +26,8 @@ All actions are OFF-CHAIN API calls — no transactions, no gas, no approvals, n
 
 <div class="box"><span class="label">Authenticated wallet:</span><br><b id="addr">checking...</b></div>
 <div class="box"><span class="label">Target job:</span><br>
-  <b>47463355-ccef-4dbb-8c0e-45129382c60c</b><br>
-  Deliver JSON comparison of pricing for 5 cloud object storage services — $5.00 USDC
+  <b>1063de95-75f4-4170-8879-f5b1b683bb9b</b><br>
+  Build an AVL tree implementation in Python — $15.00 USDC
 </div>
 
 <button id="btnClaim" onclick="claimJob()">STEP 1 — Claim job (free)</button>
@@ -92,7 +92,7 @@ async function apiCall(path, body) {
   return { ok: r.ok, status: r.status, text };
 }
 
-const JOB = "47463355-ccef-4dbb-8c0e-45129382c60c";
+const JOB = "1063de95-75f4-4170-8879-f5b1b683bb9b";
 
 window.claimJob = async function () {
   err("");
@@ -125,7 +125,7 @@ window.submitJob = async function () {
     log("solution size: " + solution.length + " bytes");
     const res = await apiCall("/api/submit?id=" + JOB, {
       executorAddress: WALLET,
-      outputData: { files: { "storage_pricing.json": solution } }
+      outputData: { files: { "avl.py": solution } }
     });
     if (!res.ok) throw new Error("Submit failed: HTTP " + res.status);
     setStatusDone();
