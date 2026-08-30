@@ -1,27 +1,25 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 
-// The ONLY job this guard allows submission for
-const ALLOWED_JOB_ID = "1063de95-75f4-4170-8879-f5b1b683bb9b";
-const EXPECTED_FILE = "avl.py";
-const MIN_LENGTH = 1000;
+const ALLOWED_JOB_ID = "a55bd7d2-b6a0-4bfc-80b5-f788d0ff312d";
+const EXPECTED_FILE = "event_emitter.ts";
+const MIN_LENGTH = 500;
 
 function loadAuthoritativeSolution() {
-  // Vercel serverless functions: static files are at the project root relative to cwd
-  const solPath = join(process.cwd(), "solution.js");
+  const solPath = join(process.cwd(), "event_emitter.ts");
   const raw = readFileSync(solPath, "utf-8");
-  const match = raw.match(/const SOLUTION_CODE = ([\s\S]*);/);
-  if (!match) throw new Error("solution.js missing SOLUTION_CODE variable");
-  return JSON.parse(match[1]);
+  return raw;
 }
 
 function validateSolution(sol) {
   if (!sol || typeof sol !== "string") return { ok: false, reason: "solution is missing or not a string" };
   if (sol.trim().length < MIN_LENGTH) return { ok: false, reason: `solution too small: ${sol.trim().length} chars (min ${MIN_LENGTH})` };
-  if (!sol.includes("All tests passed")) return { ok: false, reason: "missing 'All tests passed' marker" };
-  if (!sol.includes("class Node")) return { ok: false, reason: "missing AVL class Node" };
-  if (!sol.includes("def insert")) return { ok: false, reason: "missing def insert" };
-  if (!sol.includes("def inorder")) return { ok: false, reason: "missing def inorder" };
+  if (!sol.includes("class TypedEmitter")) return { ok: false, reason: "missing TypedEmitter class" };
+  if (!sol.includes("on<K")) return { ok: false, reason: "missing on method" };
+  if (!sol.includes("off<K")) return { ok: false, reason: "missing off method" };
+  if (!sol.includes("once<K")) return { ok: false, reason: "missing once method" };
+  if (!sol.includes("emit<K")) return { ok: false, reason: "missing emit method" };
+  if (!sol.includes("listenerCount<K")) return { ok: false, reason: "missing listenerCount method" };
   return { ok: true };
 }
 
@@ -48,7 +46,7 @@ export default async function handler(req, res) {
   console.log(`[GUARD] JOB ID: ${id}`);
 
   if (id !== ALLOWED_JOB_ID) {
-    console.log(`[GUARD] RESULT: BLOCKED_WRONG_JOB`);
+    console.log(`[GUARD] BLOCKED_WRONG_JOB`);
     return res.status(409).json({
       error: "Server guard: only job " + ALLOWED_JOB_ID + " can be submitted from this deployment",
       guardResult: "BLOCKED_WRONG_JOB"
@@ -59,7 +57,7 @@ export default async function handler(req, res) {
   try {
     authoritativeSolution = loadAuthoritativeSolution();
   } catch (e) {
-    console.log(`[GUARD] RESULT: BLOCKED_LOAD_FAIL — ${e.message}`);
+    console.log(`[GUARD] BLOCKED_LOAD_FAIL — ${e.message}`);
     return res.status(500).json({
       error: "Server guard: cannot load solution — " + e.message,
       guardResult: "BLOCKED_LOAD_FAIL"
@@ -70,7 +68,7 @@ export default async function handler(req, res) {
 
   const validation = validateSolution(authoritativeSolution);
   if (!validation.ok) {
-    console.log(`[GUARD] RESULT: BLOCKED_INVALID_SOLUTION — ${validation.reason}`);
+    console.log(`[GUARD] BLOCKED_INVALID_SOLUTION — ${validation.reason}`);
     return res.status(409).json({
       error: "Server guard: solution failed validation — " + validation.reason,
       guardResult: "BLOCKED_INVALID_SOLUTION",
@@ -88,7 +86,6 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Missing executorAddress" });
   }
 
-  // Force-replace client payload with server-verified solution
   const forwardBody = {
     executorAddress: executorAddress,
     outputData: {
@@ -96,7 +93,7 @@ export default async function handler(req, res) {
     }
   };
 
-  console.log(`[GUARD] RESULT: PASS — forwarding with ${authoritativeSolution.length} byte server solution`);
+  console.log(`[GUARD] PASS — forwarding with ${authoritativeSolution.length} byte server solution`);
 
   try {
     const response = await fetch(
