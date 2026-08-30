@@ -6,7 +6,8 @@ const EXPECTED_FILE = "event_emitter.ts";
 const MIN_LENGTH = 500;
 
 function loadAuthoritativeSolution() {
-  const solPath = join(process.cwd(), "event_emitter.ts");
+  // Vercel serverless: __dirname is /var/task/api/, project root is one level up
+  const solPath = join(__dirname, "..", EXPECTED_FILE);
   const raw = readFileSync(solPath, "utf-8");
   return raw;
 }
